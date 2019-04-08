@@ -7,6 +7,8 @@ Code repository for Gov 2003 demo of the Latent Space Network Model (LSNM).
 
 * `congressnet.Rmd`: code to run novel extension of Fowler (2015) -- estimate latent senatorial social networks based on observed co-sponsorship rates.
 
+* `/cosponsorship2010`: bill co-sponsorship data for U.S. Congress compiled by [Fowler (2015)](http://jhfowler.ucsd.edu/cosponsorship.htm) from 1970's to 2005.
+
 * `mcmc.R`: example MCMC code implemented by Hoff, Raftery, and Handcock (2002) to estimate a demo latent space model.
 
 * `dist.R`: utility functions needed to perform MCMC.
