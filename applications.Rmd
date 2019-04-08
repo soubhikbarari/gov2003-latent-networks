@@ -1,0 +1,145 @@
+---
+title: "app3"
+author: Sun Young Park
+output: html_document
+---
+
+```{r setup, include = FALSE}
+library(latentnet)
+library(coda); library(rgl)
+library(mixedMem)
+```
+
+## 18 Monk (Sampson, 1986)
+
+### characteristics
++ transitivity - distance model
++ one type of ties
+
+```{r}
+data(sampson)
+
+# fitting models in a 2D space
+samp.fit.2 <- ergmm(samplike ~ euclidean(d = 2))
+samp.fit.2C <- ergmm(samplike ~ euclidean(d = 2, G = 3)) # with clustering (3 clusters)
+samp.fit.2C4 <- ergmm(samplike ~ euclidean(d = 2, G = 4)) # with clustering (4 clusters)
+
+# fitting model in a 3D space
+samp.fit.3 <- ergmm(samplike ~ euclidean(d = 3))
+
+# compare MCMC convergence diagnostics: Both mixing and stationarity are good.
+mcmc.diagnostics(samp.fit.2)
+mcmc.diagnostics(samp.fit.2C)
+mcmc.diagnostics(samp.fit.2C4)
+mcmc.diagnostics(samp.fit.3)
+```
+
+
+```{r }
+# set colors
+oneLF <- samplike %v% "group"
+oneLF[c(1, 7, 15)] <- "Waverers"
+
+oneLFcolors <- c("black", "blue", "red", "green")[match(oneLF, c("Turks", "Outcasts", "Loyal", "Waverers"))]
+
+# plot the starting value
+plot(samp.fit.2, what = "sampling.start") 
+
+# plot the estimated latent positions
+# [Note] MKL divergence: locations that minimize the divergence between the posterior distribution of distance created using the estimate of the location calculated from MLE, posterior mean, posterior mode
+plot(samp.fit.2, label = oneLF, vertex.col = oneLFcolors,
+	 labels = TRUE, vertex.cex = 3, print.formula = FALSE, plot.vars = FALSE,
+	 main = "2D Z, without cluster")
+plot(samp.fit.2C, label = oneLF,
+	 labels = TRUE, pie = TRUE, vertex.cex = 3, print.formula = FALSE, cluster.col = c("green", "blue", "red"),
+	 main = "3 clusters")
+plot(samp.fit.2C4, label = oneLF,
+	 labels = TRUE, pie = TRUE, vertex.cex = 3, print.formula = FALSE, cluster.col = c("blue", "red", "black", "green"),
+	 main = "4 clusters")
+
+# plot the posterior distirbutions
+plot(samp.fit.2, what = "density") # why so blurry? Let's add colors
+plot(samp.fit.2C, what = "density")
+plot(samp.fit.2C4, what = "density")
+
+# BIC
+summary(samp.fit.2) 
+summary(samp.fit.3) 
+```
+
+### MMSBM
+
+```{r}
+dim(as.matrix(samplike))
+?mixedMemModel
+
+Total <- 18
+J <- 1
+Rj <- rep(1, J)
+Nijr <- array(1, dim = c(Total, J, max(Rj)))
+K <- 3
+Vj <- rep(1, J)
+alpha <- rep(.2, K)
+dist <- rep("bernoulli", J)
+obs <- array(0, dim = c(Total, J, max(Vj), max(Nijr)))
+obs[, 1, 1, 1] <- as.matrix(samplike)
+```
+
+## Tribes in New Guinea (Read, 1954)
+A network of political alliances and enmities among the 16 Gahuku-Gama sub-tribes of Eastern Central Highlands of New Guinea
+
+### characteristics
++ transitivity? - distance model
++ two types of tie
+
+```{r}
+data(tribes)
+
+# only positive ties
+tribes.fit <- ergmm(tribes ~ euclidean(d = 2, G = 3), response = "pos")
+
+# plot
+plot(tribes.fit, what = "sampling.start") 
+plot(tribes.fit, pie = TRUE, main = " ") # color of edges
+
+# three different types of ties
+tribes.fit.b <- ergmm(tribes ~ euclidean(d = 2, G = 3), response = "sign.012",
+					  family = "binomial.logit", fam.par = list(trials = 2))
+
+# check the difference in models
+plot(tribes.fit.b, what = "sampling.start") 
+par(cex.main = 1.9, cex.lab = 1.2)
+plot(tribes.fit.b,
+	 edge.col = as.matrix(tribes, "pos", m = "a")*3 + as.matrix(tribes, "neg", m = "a")*2,
+	 vertex.cex = 2.5, print.formula = FALSE,
+	 pie = TRUE,
+	 plot.vars = FALSE,
+	 main = "Multiple Types of Ties") 
+	# if we consider both ties, the network looks very different.
+
+# diagnostics
+mcmc.diagnostics(tribes.fit)
+mcmc.diagnostics(tribes.fit.b)
+```
+
+## Stratification in Natchez, Mississippi (Davis, Gardner, and Gardner, 1941)
+18 Southern women observed over a nine-month period in a series of 14 informal social events
+
+### characteristics
++ allow the variance in individual activity - projection model
++ one type of ties
+
+```{r}
+data(davis)
+
+# fit
+davis.fit <- ergmm(davis ~ bilinear(d = 2, G = 2) + rsociality)
+
+# plot
+plot(davis.fit, what = "sampling.start") 
+plot(davis.fit, pie = TRUE, rand.eff = "sociality", label = TRUE, vertex.cex = 1.5, print.formula = FALSE,
+	 main = "Projection Model")
+#
+mcmc.diagnostics(davis.fit)
+```
+

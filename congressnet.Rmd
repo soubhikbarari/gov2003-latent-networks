@@ -1,0 +1,111 @@
+---
+title: "Estimating Latent Legislative Social Networks from Cosponsorships"
+author: Soubhik Barari
+output: html_notebook
+---
+
+Original data from [Fowler et al. (2015)](http://jhfowler.ucsd.edu/cosponsorship.htm).
+
+```{r, warning=FALSE, message=FALSE}
+## Pre-amble
+library(latentnet)
+library(tidyverse)
+
+## User args
+set.seed(0)
+congress.id <- 108
+make.label <- TRUE
+```
+
+```{r}
+## 1. Read data
+senators <- read.csv(sprintf("cosponsorship2010/senate_members/%d_senators.txt",congress.id), header=FALSE)
+senate <- read.csv("cosponsorship2010/senate.csv")
+senate.bills <- read.csv("cosponsorship2010/senate_bills.txt", header=FALSE)
+senators.bill.file <- sprintf("cosponsorship2010/senate_matrices/%03d_senmatrix.txt", congress.id)
+senators.bill.mat <- as.matrix(read.csv(senators.bill.file, header=FALSE))
+
+## 2. Clean/id senators
+colnames(senators) <- c("name","thomas","icpsr")
+senators$name <- sapply(as.character(senators$name), 
+						function(s) {
+							ss<-strsplit(substring(s,5,nchar(s)), "  ")[[1]]; 
+							paste0(substr(ss[2],1,1),". ",ss[1])
+						})
+senators <- senate %>% 
+	filter(congress == congress.id) %>% 
+	select(id, party) %>% 
+	right_join(senators, by=c("id"="icpsr"))
+senators$party[senators$party == 200] <- "R"
+senators$party[senators$party == 100] <- "D"
+senators$party[senators$party == 328] <- "I"
+dems <- senators$name[senators$party == "D"]
+reps <- senators$name[senators$party == "R"]
+
+## 3. Subset sponsorship data to bills from this session
+### 1 = sponsorship, 
+### 2 = cosponsorship, 
+### 3 = cosponsorship after withdrawing previous cosponsorship
+### 5 = withdrawn cosponsorship
+colnames(senate.bills) <- c("session","type","num","private")
+this.senate.bills <- senate.bills[(senate.bills$session == congress.id),]
+rownames(senators.bill.mat) <- senators$name
+rownames(this.senate.bills) <- colnames(senators.bill.mat)
+senators.bill.mat <- senators.bill.mat[,colnames(senators.bill.mat) %in% rownames(this.senate.bills[(this.senate.bills$type == "SN"),])]
+
+## 4. Create co-sponsorship matrix
+cospons.mat <- matrix(0, nrow=nrow(senators), ncol=nrow(senators))
+colnames(cospons.mat) <- senators$name
+rownames(cospons.mat) <- senators$name
+for (i in 1:nrow(senators.bill.mat)) {
+	for (j in 1:nrow(senators.bill.mat)) {
+		if (i != j) {
+			cospons.mat[i,j] <- sum(as.integer(senators.bill.mat[i,] == 1 & senators.bill.mat[j,] == 2))
+		}
+	}
+}
+```
+
+```{r}
+## 5. Estimate LNSM
+cospons.net <- as.network(cospons.mat)
+cospons.latent <- ergmm(cospons.net ~ euclidean(d=2), family="Poisson", verbose=TRUE)
+```
+
+```{r, fig.height=5, fig.width=8}
+## 6. Do diagnostics
+mcmc.diagnostics(cospons.latent) ## check mcmc convergence
+plot(gof(cospons.latent)) ## posterior predictive checks
+summary(cospons.latent) ## check model fit
+```
+
+```{r}
+## 7. Perform model comparison amongst some candidates using BIC
+candidates <-list(
+	cospons.latent,
+	ergmm(cospons.net ~ euclidean(d=3)),
+	ergmm(cospons.net ~ euclidean(d=2) + rsociality),
+    ergmm(cospons.net ~ euclidean(d=2, G=2))
+)
+candidates.lpY <- sapply(candidates, function(c) mean(c$sample$lpY))
+candidates.bic <- sapply(candidates, function(c) summary(c)$bic$overall)
+
+cospons.mod.final <- candidates[[which(candidates.bic == min(candidates.bic))]]
+```
+
+```{r, fig=TRUE, fig.height=5, fig.width=8}
+## 8. Visualize final model
+out.file <- ifelse(make.label, 
+				   sprintf("congress%d_latent_lab.pdf", congress.id), 
+				   sprintf("congress%d_latent.pdf", congress.id))
+pdf(out.file, height=5, width=8)
+plot(cospons.mod.final, 
+	 vertex.col=ifelse(rownames(cospons.mat) %in% dems, "blue", "red"),
+	 main=sprintf("Latent Legislative Positions in %dth Congress", congress.id),
+	 sub="",xlab=c("1st principal component of Z"), ylab=c("2nd principal component of Z"),
+	 pie=FALSE, suppress.center=TRUE, zoom.on=TRUE, cluster.col=NULL,
+	 labels=make.label, label.cex = 0.58,
+	 edge.lwd=0.3,
+	 what="pmean")
+dev.off()
+```
